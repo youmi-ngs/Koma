@@ -9,6 +9,7 @@ enum AppContainer {
         Meeting.self,
         TaskItem.self,
         Exam.self,
+        MakeupClass.self,
     ])
 
     static let shared: ModelContainer = {

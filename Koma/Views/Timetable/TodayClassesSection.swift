@@ -19,6 +19,8 @@ struct TodayClassesSection: View {
         let slots: [PeriodSlot]
         let first: PeriodSlot?
         let last: PeriodSlot?
+        /// 振替で足した回かどうか。
+        let isMakeup: Bool
 
         var periodText: String {
             guard let firstPeriod = periods.first, let lastPeriod = periods.last else { return "" }
@@ -33,8 +35,27 @@ struct TodayClassesSection: View {
     }
 
     private var blocks: [Block] {
-        let weekday = Calendar.current.component(.weekday, from: today)
+        let calendar = Calendar.current
+        let weekday = calendar.component(.weekday, from: today)
         var result: [Block] = []
+
+        // 振替は時間割に無い回なので、今日ぶんを別に拾う。
+        for course in semester.courses {
+            for makeup in course.makeups where calendar.isDate(makeup.date, inSameDayAs: today) {
+                guard let meeting = course.meetings.first else { continue }
+                let slot = semester.period(at: makeup.period)
+                result.append(Block(
+                    id: "makeup-\(makeup.uid)",
+                    course: course,
+                    meeting: meeting,
+                    periods: [makeup.period],
+                    slots: [slot].compactMap { $0 },
+                    first: slot,
+                    last: slot,
+                    isMakeup: true
+                ))
+            }
+        }
 
         for course in semester.courses {
             let periods = course.meetings
@@ -53,7 +74,8 @@ struct TodayClassesSection: View {
                     periods: run.map(\.period),
                     slots: run.compactMap { semester.period(at: $0.period) },
                     first: semester.period(at: head.period),
-                    last: semester.period(at: tail.period)
+                    last: semester.period(at: tail.period),
+                    isMakeup: false
                 ))
                 run = []
             }
@@ -181,6 +203,13 @@ private struct TodayClassRow: View {
                             .padding(.vertical, 2)
                             .background(Color.orange.opacity(0.18), in: .capsule)
                             .foregroundStyle(.orange)
+                    } else if block.isMakeup {
+                        Text("Make-up")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Color.indigo.opacity(0.18), in: .capsule)
+                            .foregroundStyle(.indigo)
                     }
                 }
 

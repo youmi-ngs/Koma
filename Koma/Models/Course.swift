@@ -80,6 +80,9 @@ final class Course {
     @Relationship(deleteRule: .cascade, inverse: \Exam.course)
     var exams: [Exam] = []
 
+    @Relationship(deleteRule: .cascade, inverse: \MakeupClass.course)
+    var makeups: [MakeupClass] = []
+
     init(
         name: String = "",
         teacher: String = "",
@@ -240,6 +243,16 @@ final class Course {
 
     var sortedExams: [Exam] {
         exams.sorted { $0.date < $1.date }
+    }
+
+    var sortedMakeups: [MakeupClass] {
+        makeups.sorted { $0.date == $1.date ? $0.period < $1.period : $0.date < $1.date }
+    }
+
+    /// これから先の振替の数。
+    func upcomingMakeupCount(from date: Date = .now, calendar: Calendar = .current) -> Int {
+        let today = calendar.startOfDay(for: date)
+        return makeups.filter { $0.date >= today }.count
     }
 
     func prompt(for kind: TaskKind) -> String {

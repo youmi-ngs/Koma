@@ -147,63 +147,94 @@ enum TaskScheduler {
         }
 
         let kinds = course.enabledReminderKinds.filter(\.isRecurring)
-        guard !kinds.isEmpty, !course.meetings.isEmpty else { return result }
+        guard !kinds.isEmpty else { return result }
 
-        let semesterEnd = calendar.startOfDay(for: semester.endDate)
+        let rangeEnd = min(calendar.startOfDay(for: semester.endDate), windowEnd)
+        guard historyStart <= rangeEnd else { return result }
+
+        let occurrences = classOccurrences(
+            for: course,
+            in: semester,
+            from: historyStart,
+            to: rangeEnd,
+            calendar: calendar
+        )
+        guard !occurrences.isEmpty else { return result }
 
         // 「次の授業の前まで」を期限にする場合だけ、学期ぶんの授業開始時刻を並べておく。
         let classStarts: [Date] = course.assignmentEnabled
             && course.assignmentDeadlineMode == .beforeNextClass
-            ? allClassStarts(for: course, in: semester, from: calendar.startOfDay(for: semester.startDate), to: semesterEnd, calendar: calendar)
+            ? allClassStarts(for: course, in: semester, calendar: calendar)
             : []
 
         for kind in kinds {
-            // 出席も含め、学期の開始から作る。押しそびれた回も記録として残るようにするため。
-            let rangeStart = historyStart
-            let rangeEnd = min(semesterEnd, windowEnd)
-            guard rangeStart <= rangeEnd else { continue }
-
-            for meeting in course.meetings {
-                let slot = semester.period(at: meeting.period)
-                for day in ClassDays.occurrences(
-                    weekday: meeting.weekday,
-                    from: rangeStart,
-                    to: rangeEnd,
-                    calendar: calendar
-                ) {
-                    // 休講の回はどの種類のやることも作らない。
-                    guard !course.isCancelled(on: day, calendar: calendar) else { continue }
-
-                    let classDate = calendar.date(
-                        bySettingHour: slot?.startHour ?? 9,
-                        minute: slot?.startMinute ?? 0,
-                        second: 0,
-                        of: day
-                    ) ?? day
-
-                    let slotKey = key(kind: kind, day: day, period: meeting.period)
-                    // コマ単位でないものは1日1件。同じ日に2コマある授業は早いコマを基準にする。
-                    if !kind.isPerPeriod,
-                       let existing = result[slotKey],
-                       existing.classDate <= classDate {
-                        continue
-                    }
-                    result[slotKey] = Desired(
-                        classDate: classDate,
-                        period: meeting.period,
-                        dueDate: dueDate(
-                            for: kind,
-                            course: course,
-                            classDay: day,
-                            classStart: classDate,
-                            nextClassStart: classStarts.first { $0 > classDate },
-                            calendar: calendar
-                        )
-                    )
+            for occurrence in occurrences {
+                let slotKey = key(kind: kind, day: occurrence.day, period: occurrence.period)
+                // コマ単位でないものは1日1件。同じ日に2コマある授業は早いコマを基準にする。
+                if !kind.isPerPeriod,
+                   let existing = result[slotKey],
+                   existing.classDate <= occurrence.start {
+                    continue
                 }
+                result[slotKey] = Desired(
+                    classDate: occurrence.start,
+                    period: occurrence.period,
+                    dueDate: dueDate(
+                        for: kind,
+                        course: course,
+                        classDay: occurrence.day,
+                        classStart: occurrence.start,
+                        nextClassStart: classStarts.first { $0 > occurrence.start },
+                        calendar: calendar
+                    )
+                )
             }
         }
         return result
+    }
+
+    /// 授業が行われる1回ぶん。時間割のコマと、振替で足した回の両方を指す。
+    private struct Occurrence {
+        var day: Date
+        var period: Int
+        var start: Date
+    }
+
+    /// その授業が実際に行われる回を並べる。休講は除き、振替は足す。
+    private static func classOccurrences(
+        for course: Course,
+        in semester: Semester,
+        from start: Date,
+        to end: Date,
+        calendar: Calendar
+    ) -> [Occurrence] {
+        var result: [Occurrence] = []
+
+        func add(day: Date, period: Int) {
+            let day = calendar.startOfDay(for: day)
+            guard day >= start, day <= end else { return }
+            guard !course.isCancelled(on: day, calendar: calendar) else { return }
+            let slot = semester.period(at: period)
+            guard let begin = calendar.date(
+                bySettingHour: slot?.startHour ?? 9,
+                minute: slot?.startMinute ?? 0,
+                second: 0,
+                of: day
+            ) else { return }
+            result.append(Occurrence(day: day, period: period, start: begin))
+        }
+
+        for meeting in course.meetings {
+            for day in ClassDays.occurrences(weekday: meeting.weekday, from: start, to: end, calendar: calendar) {
+                add(day: day, period: meeting.period)
+            }
+        }
+        // 振替は休講になった回の代わりなので、同じように1回ぶんの授業として扱う。
+        for makeup in course.makeups {
+            add(day: makeup.date, period: makeup.period)
+        }
+
+        return result.sorted { $0.start < $1.start }
     }
 
     /// この授業の「授業日」を時系列で並べる。
@@ -212,32 +243,24 @@ enum TaskScheduler {
     private static func allClassStarts(
         for course: Course,
         in semester: Semester,
-        from start: Date,
-        to end: Date,
         calendar: Calendar
     ) -> [Date] {
+        let occurrences = classOccurrences(
+            for: course,
+            in: semester,
+            from: calendar.startOfDay(for: semester.startDate),
+            to: calendar.startOfDay(for: semester.endDate),
+            calendar: calendar
+        )
         var firstStartByDay: [Date: Date] = [:]
-        for meeting in course.meetings {
-            let slot = semester.period(at: meeting.period)
-            for day in ClassDays.occurrences(weekday: meeting.weekday, from: start, to: end, calendar: calendar) {
-                // 休講の回は「次の授業」として数えない。
-                guard !course.isCancelled(on: day, calendar: calendar) else { continue }
-                guard let classStart = calendar.date(
-                    bySettingHour: slot?.startHour ?? 9,
-                    minute: slot?.startMinute ?? 0,
-                    second: 0,
-                    of: day
-                ) else { continue }
-
-                let key = calendar.startOfDay(for: day)
-                if let existing = firstStartByDay[key], existing <= classStart { continue }
-                firstStartByDay[key] = classStart
-            }
+        for occurrence in occurrences {
+            if let existing = firstStartByDay[occurrence.day], existing <= occurrence.start { continue }
+            firstStartByDay[occurrence.day] = occurrence.start
         }
         return firstStartByDay.values.sorted()
     }
 
-    /// 提出期限を求める。出席は授業開始からの分、課題は設定した決め方による。
+    /// 提出期限を求める。    /// 提出期限を求める。出席は授業開始からの分、課題は設定した決め方による。
     static func dueDate(
         for kind: TaskKind,
         course: Course,

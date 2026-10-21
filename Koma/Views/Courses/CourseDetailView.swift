@@ -14,6 +14,8 @@ struct CourseDetailView: View {
     @State private var isAddingExam = false
     @State private var isSplitting = false
     @State private var isMerging = false
+    @State private var makeupBeingEdited: MakeupClass?
+    @State private var makeupRequest: MakeupRequest?
 
     private var upcomingTasks: [TaskItem] {
         course.tasks
@@ -30,6 +32,7 @@ struct CourseDetailView: View {
             attendanceSection
             if !course.itemList.isEmpty { itemsSection }
             reminderSummarySection
+            makeupsSection
             examsSection
             if !upcomingTasks.isEmpty { upcomingSection }
             if !course.note.isEmpty { noteSection }
@@ -51,6 +54,12 @@ struct CourseDetailView: View {
         }
         .sheet(isPresented: $isMerging) {
             CourseMergeView(course: course)
+        }
+        .sheet(item: $makeupRequest) { request in
+            MakeupClassEditView(mode: .create(course: course, replacing: request.replacing))
+        }
+        .sheet(item: $makeupBeingEdited) { makeup in
+            MakeupClassEditView(mode: .edit(makeup))
         }
         .sheet(isPresented: $isAddingExam) {
             ExamEditView(mode: .create(course: course))
@@ -289,6 +298,45 @@ struct CourseDetailView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var makeupsSection: some View {
+        Section {
+            ForEach(course.sortedMakeups) { makeup in
+                Button {
+                    makeupBeingEdited = makeup
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(makeup.slotText)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if let replaces = makeup.replacesDay {
+                                Text("for \(replaces.formatted(.dateTime.month(.abbreviated).day()))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if !makeup.roomOverride.isEmpty {
+                            Label(makeup.roomOverride, systemImage: "mappin.and.ellipse")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
+            Button {
+                makeupRequest = MakeupRequest(replacing: nil)
+            } label: {
+                Label("Add make-up class", systemImage: "plus.circle.fill")
+            }
+        } header: {
+            Label("Make-up classes", systemImage: "calendar.badge.plus")
+        } footer: {
+            Text("An extra class on a one-off date, for when a cancelled one is rescheduled. It gets its own attendance, FS, and assignment.")
+        }
     }
 
     private var examsSection: some View {

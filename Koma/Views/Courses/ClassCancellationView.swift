@@ -1,10 +1,17 @@
 import SwiftData
 import SwiftUI
 
+/// 振替の追加シートに渡す「どの休講の代わりか」。
+struct MakeupRequest: Identifiable {
+    var id = UUID()
+    var replacing: Date?
+}
+
 /// 休講の設定。学期ぶんの回をすべて並べ、日付ごとに「この日は休み」を切り替える。
 struct ClassCancellationView: View {
     @Environment(\.modelContext) private var context
     @Bindable var course: Course
+    @State private var makeupRequest: MakeupRequest?
 
     private var calendar: Calendar { .current }
 
@@ -72,6 +79,9 @@ struct ClassCancellationView: View {
         }
         .navigationTitle("Cancelled classes")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $makeupRequest) { request in
+            MakeupClassEditView(mode: .create(course: course, replacing: request.replacing))
+        }
     }
 
     private var list: some View {
@@ -82,12 +92,22 @@ struct ClassCancellationView: View {
                         ForEach(group.days, id: \.self) { day in
                             dayRow(day)
                                 .id(day)
+                                .swipeActions(edge: .leading) {
+                                    if course.isCancelled(on: day, calendar: calendar) {
+                                        Button {
+                                            makeupRequest = MakeupRequest(replacing: day)
+                                        } label: {
+                                            Label("Make-up", systemImage: "calendar.badge.plus")
+                                        }
+                                        .tint(.indigo)
+                                    }
+                                }
                         }
                     } header: {
                         Text(group.title)
                     } footer: {
                         if group.id == groups.last?.id {
-                            Text("Turn a date on to mark it cancelled. No attendance, FS, or assignment is created for that day, and it is skipped when working out the next class.")
+                            Text("Turn a date on to mark it cancelled. No attendance, FS, or assignment is created for that day, and it is skipped when working out the next class. Swipe a cancelled date from the left to add its make-up.")
                         }
                     }
                 }
