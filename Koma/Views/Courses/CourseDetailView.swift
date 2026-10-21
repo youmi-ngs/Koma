@@ -13,6 +13,7 @@ struct CourseDetailView: View {
     @State private var examBeingEdited: Exam?
     @State private var isAddingExam = false
     @State private var isSplitting = false
+    @State private var isMerging = false
 
     private var upcomingTasks: [TaskItem] {
         course.tasks
@@ -47,6 +48,9 @@ struct CourseDetailView: View {
         }
         .sheet(isPresented: $isSplitting) {
             CourseSplitView(course: course)
+        }
+        .sheet(isPresented: $isMerging) {
+            CourseMergeView(course: course)
         }
         .sheet(isPresented: $isAddingExam) {
             ExamEditView(mode: .create(course: course))
@@ -136,6 +140,14 @@ struct CourseDetailView: View {
                     isSplitting = true
                 } label: {
                     Label("Split into another course", systemImage: "square.split.2x1")
+                }
+            }
+
+            if (course.semester?.courses.count ?? 0) > 1 {
+                Button {
+                    isMerging = true
+                } label: {
+                    Label("Merge another course into this", systemImage: "square.on.square")
                 }
             }
 
