@@ -52,6 +52,17 @@ struct SemesterEditView: View {
         return nil
     }
 
+    /// 期間が何週あるか。端数は切り上げる。
+    private var weekCount: Int {
+        let calendar = Calendar.current
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: startDate),
+            to: calendar.startOfDay(for: endDate)
+        ).day ?? 0
+        return max(1, Int((Double(days + 1) / 7).rounded(.up)))
+    }
+
     private var isValid: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && startDate <= endDate
     }
@@ -80,7 +91,8 @@ struct SemesterEditView: View {
             } header: {
                 Text("Dates")
             } footer: {
-                Text("Reminders are created only for class days inside this range.")
+                // 期間がずれていると授業回数が合わなくなり、出席率の見込みまで狂う。
+                Text("\(weekCount) weeks, so a weekly slot holds \(weekCount) classes. Reminders are created only for class days inside this range.")
             }
 
             Section("Days Shown") {

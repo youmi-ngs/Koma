@@ -67,38 +67,42 @@ final class Semester {
             && day <= calendar.startOfDay(for: endDate)
     }
 
-    /// 年度と月から「2026年度 後期」のような既定の名前を作る。
-    static func suggestedName(for date: Date = .now) -> String {
-        let calendar = Calendar.current
+    /// 1学期は8週。1コマにつき8回で1単位という数え方に合わせる。
+    static let weeksPerTerm = 8
+
+    /// その日が属するクォーター。(年度, 1〜4)
+    private static func quarter(for date: Date, calendar: Calendar = .current) -> (year: Int, number: Int) {
         let month = calendar.component(.month, from: date)
         let year = calendar.component(.year, from: date)
-        // 日本の学年暦は4月始まり。1〜3月は前年度の後期にあたる。
-        let academicYear = month < 4 ? year - 1 : year
-        if (4...9).contains(month) {
-            return "Spring \(academicYear)"
+        switch month {
+        case 4, 5: return (year, 1)
+        case 6, 7, 8, 9: return (year, 2)
+        case 10, 11: return (year, 3)
+        case 12: return (year, 4)
+        default: return (year - 1, 4)   // 1〜3月は前年度の4Q
         }
-        return "Fall \(academicYear)"
     }
 
-    /// 既定の学期期間（前期は4月〜8月上旬、後期は10月〜2月上旬）。
+    /// 「2026 3Q」のような既定の名前。
+    static func suggestedName(for date: Date = .now) -> String {
+        let term = quarter(for: date)
+        return "\(term.year) \(term.number)Q"
+    }
+
+    /// クォーターの始まりから8週間。正確な日付は学校の暦に合わせて直す前提。
     static func suggestedRange(for date: Date = .now) -> (start: Date, end: Date) {
         let calendar = Calendar.current
-        let month = calendar.component(.month, from: date)
-        let year = calendar.component(.year, from: date)
-        let isSpringTerm = (4...9).contains(month)
-
-        let startComponents: DateComponents
-        let endComponents: DateComponents
-        if isSpringTerm {
-            startComponents = DateComponents(year: year, month: 4, day: 1)
-            endComponents = DateComponents(year: year, month: 8, day: 10)
-        } else {
-            let startYear = month < 4 ? year - 1 : year
-            startComponents = DateComponents(year: startYear, month: 10, day: 1)
-            endComponents = DateComponents(year: startYear + 1, month: 2, day: 10)
+        let term = quarter(for: date)
+        let startMonth: Int
+        switch term.number {
+        case 1: startMonth = 4
+        case 2: startMonth = 6
+        case 3: startMonth = 10
+        default: startMonth = 12
         }
+        let startComponents = DateComponents(year: term.year, month: startMonth, day: 1)
         let start = calendar.date(from: startComponents) ?? date
-        let end = calendar.date(from: endComponents) ?? date
+        let end = calendar.date(byAdding: .day, value: weeksPerTerm * 7 - 1, to: start) ?? start
         return (start, end)
     }
 }
