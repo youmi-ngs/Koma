@@ -175,6 +175,12 @@ struct CourseEditView: View {
                 }
             }
 
+            Picker("Credit needs over", selection: $draft.attendanceThresholdPercent) {
+                ForEach([50, 60, 66, 70, 75, 80], id: \.self) { value in
+                    Text("\(value)%").tag(value)
+                }
+            }
+
             TextField("Note (e.g. roll call in the second half)", text: $draft.attendanceDetail, axis: .vertical)
                 .lineLimit(1...3)
         } header: {

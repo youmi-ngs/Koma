@@ -60,6 +60,35 @@ struct AttendanceRecordView: View {
                 Text("Counts the classes that have already happened, one per period.")
             }
 
+            if let outlook = course.creditOutlook() {
+                Section {
+                    LabeledContent("Classes this semester") {
+                        Text("\(outlook.total)").monospacedDigit()
+                    }
+                    LabeledContent("Must attend") {
+                        Text("\(outlook.needed)").monospacedDigit()
+                    }
+                    LabeledContent("Can still miss") {
+                        Text("\(outlook.canMiss)")
+                            .monospacedDigit()
+                            .foregroundStyle(outlook.canMiss == 0 ? Color.red : Color.accentColor)
+                            .fontWeight(.semibold)
+                    }
+                } header: {
+                    Text("Credit")
+                } footer: {
+                    let tally = course.attendanceTally()
+                    if outlook.canMiss == 0 {
+                        Text("Credit needs more than \(course.attendanceThresholdPercent)% attendance. There is no room left to miss another class.")
+                            .foregroundStyle(.red)
+                    } else if tally.unrecorded > 0 {
+                        Text("Credit needs more than \(course.attendanceThresholdPercent)% attendance. \(tally.unrecorded) classes have no record yet and are not counted as missed.")
+                    } else {
+                        Text("Credit needs more than \(course.attendanceThresholdPercent)% attendance, so \(outlook.needed) of \(outlook.total) classes.")
+                    }
+                }
+            }
+
             if !past.isEmpty {
                 Section("Past classes") {
                     ForEach(past) { task in

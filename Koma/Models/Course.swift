@@ -20,6 +20,8 @@ final class Course {
     /// 授業開始から何分後に確認の通知を出すか。
     var attendanceLeadMinutes: Int = 0
     var attendanceReminderEnabled: Bool = true
+    /// 単位が認定される出席率（%）。これを「超える」ことが条件。
+    var attendanceThresholdPercent: Int = 70
     /// 空のときは出席方法から文を自動で作る。
     var attendancePrompt: String = ""
     var colorIndex: Int = 0
@@ -243,6 +245,32 @@ final class Course {
 
     var sortedExams: [Exam] {
         exams.sorted { $0.date < $1.date }
+    }
+
+    /// 学期ぶんの授業回数（コマ単位）。休講を除き、振替を足す。
+    @MainActor
+    func plannedClassCount(calendar: Calendar = .current) -> Int {
+        guard let semester else { return 0 }
+        return ClassDays.classOccurrences(
+            for: self,
+            in: semester,
+            from: calendar.startOfDay(for: semester.startDate),
+            to: calendar.startOfDay(for: semester.endDate),
+            calendar: calendar
+        ).count
+    }
+
+    /// 単位認定に必要な出席回数と、あと何回休めるか。
+    /// 「70%超」なので、ちょうど70%では足りない点に注意。
+    @MainActor
+    func creditOutlook(upTo now: Date = .now, calendar: Calendar = .current) -> (total: Int, needed: Int, canMiss: Int)? {
+        let total = plannedClassCount(calendar: calendar)
+        guard total > 0 else { return nil }
+        let ratio = Double(max(0, min(100, attendanceThresholdPercent))) / 100
+        // p / total > ratio を満たす最小の整数
+        let needed = min(total, Int((Double(total) * ratio).rounded(.down)) + 1)
+        let absent = attendanceTally(upTo: now).absent
+        return (total, needed, max(0, total - needed - absent))
     }
 
     /// これまでの出席の集計。授業がすでに終わった回だけを数える。

@@ -119,6 +119,7 @@ enum TaskScheduler {
         return calendar.startOfDay(for: semester.startDate)
     }
 
+    @MainActor
     private static func desiredTasks(
         for course: Course,
         historyStart: Date,
@@ -152,7 +153,7 @@ enum TaskScheduler {
         let rangeEnd = min(calendar.startOfDay(for: semester.endDate), windowEnd)
         guard historyStart <= rangeEnd else { return result }
 
-        let occurrences = classOccurrences(
+        let occurrences = ClassDays.classOccurrences(
             for: course,
             in: semester,
             from: historyStart,
@@ -193,59 +194,16 @@ enum TaskScheduler {
         return result
     }
 
-    /// 授業が行われる1回ぶん。時間割のコマと、振替で足した回の両方を指す。
-    private struct Occurrence {
-        var day: Date
-        var period: Int
-        var start: Date
-    }
-
-    /// その授業が実際に行われる回を並べる。休講は除き、振替は足す。
-    private static func classOccurrences(
-        for course: Course,
-        in semester: Semester,
-        from start: Date,
-        to end: Date,
-        calendar: Calendar
-    ) -> [Occurrence] {
-        var result: [Occurrence] = []
-
-        func add(day: Date, period: Int) {
-            let day = calendar.startOfDay(for: day)
-            guard day >= start, day <= end else { return }
-            guard !course.isCancelled(on: day, calendar: calendar) else { return }
-            let slot = semester.period(at: period)
-            guard let begin = calendar.date(
-                bySettingHour: slot?.startHour ?? 9,
-                minute: slot?.startMinute ?? 0,
-                second: 0,
-                of: day
-            ) else { return }
-            result.append(Occurrence(day: day, period: period, start: begin))
-        }
-
-        for meeting in course.meetings {
-            for day in ClassDays.occurrences(weekday: meeting.weekday, from: start, to: end, calendar: calendar) {
-                add(day: day, period: meeting.period)
-            }
-        }
-        // 振替は休講になった回の代わりなので、同じように1回ぶんの授業として扱う。
-        for makeup in course.makeups {
-            add(day: makeup.date, period: makeup.period)
-        }
-
-        return result.sorted { $0.start < $1.start }
-    }
-
     /// この授業の「授業日」を時系列で並べる。
     /// 2時間続きのように同じ日に複数コマある授業は、その日の最初のコマを代表にして1件にまとめる。
     /// まとめないと、1限の課題の期限が同じ日の2限になってしまう。
+    @MainActor
     private static func allClassStarts(
         for course: Course,
         in semester: Semester,
         calendar: Calendar
     ) -> [Date] {
-        let occurrences = classOccurrences(
+        let occurrences = ClassDays.classOccurrences(
             for: course,
             in: semester,
             from: calendar.startOfDay(for: semester.startDate),

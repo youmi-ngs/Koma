@@ -198,8 +198,13 @@ struct CourseDetailView: View {
             } label: {
                 let tally = course.attendanceTally()
                 LabeledContent {
-                    Text(tally.absent > 0 ? "\(tally.present) present · \(tally.absent) absent" : "\(tally.present) present")
-                        .foregroundStyle(tally.absent > 0 ? Color.red : .secondary)
+                    if let outlook = course.creditOutlook(), tally.absent > 0 || outlook.canMiss <= 2 {
+                        Text("\(tally.absent) absent · can miss \(outlook.canMiss)")
+                            .foregroundStyle(outlook.canMiss == 0 ? Color.red : Color.orange)
+                    } else {
+                        Text("\(tally.present) present")
+                            .foregroundStyle(.secondary)
+                    }
                 } label: {
                     Label("Record", systemImage: "list.bullet.rectangle")
                 }

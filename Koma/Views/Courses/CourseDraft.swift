@@ -20,6 +20,7 @@ struct CourseDraft {
     var attendanceWindowMinutes: Int = 5
     var attendanceLeadMinutes: Int = 0
     var attendanceReminderEnabled: Bool = true
+    var attendanceThresholdPercent: Int = 70
     var attendancePrompt: String = ""
     var colorIndex: Int = 0
     var note: String = ""
@@ -57,6 +58,7 @@ struct CourseDraft {
         attendanceWindowMinutes = course.attendanceWindowMinutes
         attendanceLeadMinutes = course.attendanceLeadMinutes
         attendanceReminderEnabled = course.attendanceReminderEnabled
+        attendanceThresholdPercent = course.attendanceThresholdPercent
         attendancePrompt = course.attendancePrompt
         colorIndex = course.colorIndex
         note = course.note
@@ -119,6 +121,7 @@ struct CourseDraft {
         course.attendanceWindowMinutes = max(1, attendanceWindowMinutes)
         course.attendanceLeadMinutes = max(0, attendanceLeadMinutes)
         course.attendanceReminderEnabled = attendanceReminderEnabled
+        course.attendanceThresholdPercent = attendanceThresholdPercent
         course.attendancePrompt = attendancePrompt
         course.colorIndex = colorIndex
         course.note = note
