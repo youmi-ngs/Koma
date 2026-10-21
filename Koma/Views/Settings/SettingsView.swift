@@ -80,6 +80,12 @@ struct SettingsView: View {
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
+                    Button {
+                        duplicate(semester)
+                    } label: {
+                        Label("Duplicate", systemImage: "plus.square.on.square")
+                    }
+                    .tint(.indigo)
                 }
             }
 
@@ -91,7 +97,7 @@ struct SettingsView: View {
         } header: {
             Text("Semesters")
         } footer: {
-            Text("Timetables are saved per semester. Switching semesters shows only that semester's courses.")
+            Text("Timetables are saved per semester. Switching semesters shows only that semester's courses. Swipe a semester to duplicate it, which copies its courses and slots but not its to-dos.")
         }
     }
 
@@ -185,6 +191,14 @@ struct SettingsView: View {
         case .denied: return .red
         default: return .secondary
         }
+    }
+
+    /// 授業とコマを引き継いだ学期を作る。日付と名前はあとから直す前提。
+    private func duplicate(_ semester: Semester) {
+        withAnimation {
+            SemesterDuplicator.duplicate(semester, in: context)
+        }
+        Task { await TaskSyncCoordinator.shared.sync(context: context) }
     }
 
     private func delete(_ semester: Semester) {

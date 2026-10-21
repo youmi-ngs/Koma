@@ -15,11 +15,13 @@ struct TimetableView: View {
     private enum SheetRoute: Identifiable {
         case newCourse(TimetableSlot?)
         case newSemester
+        case importImage
 
         var id: String {
             switch self {
             case let .newCourse(slot): return "course-\(slot?.id ?? "any")"
             case .newSemester: return "semester"
+            case .importImage: return "import"
             }
         }
     }
@@ -61,6 +63,10 @@ struct TimetableView: View {
                     }
                 case .newSemester:
                     SemesterEditView(mode: .create)
+                case .importImage:
+                    if let semester {
+                        TimetableImportView(semester: semester)
+                    }
                 }
             }
         }
@@ -143,10 +149,19 @@ struct TimetableView: View {
         }
 
         ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                route = .newCourse(nil)
+            Menu {
+                Button {
+                    route = .newCourse(nil)
+                } label: {
+                    Label("Add Course", systemImage: "plus")
+                }
+                Button {
+                    route = .importImage
+                } label: {
+                    Label("Import from Image", systemImage: "text.viewfinder")
+                }
             } label: {
-                Label("Add Course", systemImage: "plus")
+                Label("Add", systemImage: "plus")
             }
             .disabled(semester == nil)
         }
