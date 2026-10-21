@@ -16,10 +16,22 @@ struct CourseSplitView: View {
         course.sortedMeetings.filter { selected.contains($0.persistentModelID) }
     }
 
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 元と同じ名前では分けさせない。
+    /// 同じ名前の授業が2つできると、どちらも自分のぶんのやることを作るので、
+    /// 1つの授業にやることが二重に出ているようにしか見えなくなる。
+    private var isNameTaken: Bool {
+        trimmedName.caseInsensitiveCompare(course.displayName) == .orderedSame
+    }
+
     private var canSplit: Bool {
         !moving.isEmpty
             && moving.count < course.meetings.count
-            && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !trimmedName.isEmpty
+            && !isNameTaken
     }
 
     var body: some View {
@@ -30,7 +42,12 @@ struct CourseSplitView: View {
                 } header: {
                     Text("Split off as")
                 } footer: {
-                    Text("The slots you pick move to a new course that starts with the same settings as \(course.displayName). Its to-dos are rebuilt for the new course.")
+                    if isNameTaken {
+                        Text("Give it a different name. Two courses called \(course.displayName) would each make their own to-dos, which reads as one course with everything twice.")
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("The slots you pick move to a new course that starts with the same settings as \(course.displayName). Its to-dos are rebuilt for the new course.")
+                    }
                 }
 
                 Section("Slots") {
@@ -70,7 +87,8 @@ struct CourseSplitView: View {
                 }
             }
             .onAppear {
-                if name.isEmpty { name = course.displayName }
+                // 元と同じ名前のままにできないよう、初めから区別のつく名前にしておく。
+                if name.isEmpty { name = "\(course.displayName) 2" }
             }
         }
     }
@@ -89,7 +107,7 @@ struct CourseSplitView: View {
         guard !moving.isEmpty, moving.count < course.meetings.count else { return }
 
         let newCourse = Course(
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: trimmedName,
             colorIndex: course.colorIndex + 1,
             semester: course.semester
         )
