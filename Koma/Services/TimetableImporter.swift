@@ -37,19 +37,27 @@ enum TimetableImporter {
     /// 読み取った文字と、画像の中での位置。
     private struct Block {
         var text: String
-        /// 画像の左上を原点にした中心（0...1）。
-        var center: CGPoint
+        /// 画像の左上を原点にした枠（0...1）。
+        var box: CGRect
+
+        var center: CGPoint { CGPoint(x: box.midX, y: box.midY) }
     }
 
+    /// OCR にかける前の最低限の横幅。ポータルのスクショは細かく、そのままだと読み違えが増える。
+    private static let minimumWidth = 2000
+
     static func detect(in image: UIImage) async throws -> [DetectedCourse] {
-        guard let cgImage = image.cgImage else { throw ImportError.unreadableImage }
+        guard let original = image.cgImage else { throw ImportError.unreadableImage }
+        let cgImage = upscaled(original)
 
         // 1回目は全体を読んで、曜日の並びと各限の位置だけを取る。
         let blocks = try await recognize(cgImage, in: nil)
         guard !blocks.isEmpty else { throw ImportError.noGridFound }
 
-        let columns = try weekdayColumns(from: blocks)
-        let rows = try periodRows(from: blocks, below: columns.headerY)
+        let aspect = CGFloat(cgImage.height) / CGFloat(cgImage.width)
+        let columns = try weekdayColumns(from: blocks, aspect: aspect)
+        let gutterX = columns.centers[0].x - columns.width / 2
+        let rows = try periodRows(from: blocks, below: columns.headerY, gutterX: gutterX)
 
         // 2回目は曜日ごとに縦に切って読む。
         // 切らずに読むと「火水」「4写真演...Webプ...」のように行がつながってしまうため。
@@ -75,6 +83,28 @@ enum TimetableImporter {
         }
 
         return courses(from: cells)
+    }
+
+    /// 小さい画像は引き伸ばしてから読む。文字が小さいままだと精度が落ちるため。
+    private static func upscaled(_ image: CGImage) -> CGImage {
+        guard image.width < minimumWidth else { return image }
+        let scale = min(4, CGFloat(minimumWidth) / CGFloat(image.width))
+        let width = Int(CGFloat(image.width) * scale)
+        let height = Int(CGFloat(image.height) * scale)
+        guard
+            let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+            )
+        else { return image }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage() ?? image
     }
 
     /// `region` を渡すと、画像のその範囲だけを読む（左上原点の 0...1）。
@@ -113,7 +143,11 @@ enum TimetableImporter {
                     guard !text.isEmpty else { return nil }
                     let box = observation.boundingBox
                     // Vision は左下原点。扱いやすいよう左上原点に直す。
-                    return Block(text: text, center: CGPoint(x: box.midX, y: 1 - box.midY))
+                    // Vision は左下原点。扱いやすいよう左上原点に直す。
+                    return Block(
+                        text: text,
+                        box: CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height)
+                    )
                 }
                 continuation.resume(returning: blocks)
             }
@@ -133,9 +167,11 @@ enum TimetableImporter {
         return blocks.map {
             Block(
                 text: $0.text,
-                center: CGPoint(
-                    x: offset.x + $0.center.x * scale.width,
-                    y: offset.y + $0.center.y * scale.height
+                box: CGRect(
+                    x: offset.x + $0.box.minX * scale.width,
+                    y: offset.y + $0.box.minY * scale.height,
+                    width: $0.box.width * scale.width,
+                    height: $0.box.height * scale.height
                 )
             )
         }
@@ -148,53 +184,50 @@ enum TimetableImporter {
         "Sun": 1, "Mon": 2, "Tue": 3, "Wed": 4, "Thu": 5, "Fri": 6, "Sat": 7,
     ]
 
-    /// 曜日の見出しから、列の中心を等間隔で割り出す。
-    /// 「火水」のようにつながって読まれることがあるので、文字数で位置を補正する。
+    /// 曜日の見出しから列を割り出す。
+    /// 見出しは「火水」のようにつながって読まれることがあるので、
+    /// 中心ではなく**見出し全体の左端から右端まで**を使って等間隔に割る。
     private static func weekdayColumns(
-        from blocks: [Block]
+        from blocks: [Block],
+        aspect: CGFloat
     ) throws -> (centers: [(weekday: Int, x: CGFloat)], width: CGFloat, headerY: CGFloat) {
-        var headers: [(weekdays: [Int], x: CGFloat, y: CGFloat)] = []
+        var headers: [(weekdays: [Int], box: CGRect)] = []
         for block in blocks {
             let weekdays = block.text.compactMap { weekdaySymbols[String($0)] }
             guard weekdays.count == block.text.count, !weekdays.isEmpty else { continue }
-            headers.append((weekdays, block.center.x, block.center.y))
+            headers.append((weekdays, block.box))
         }
-        headers.sort { $0.x < $1.x }
+        headers.sort { $0.box.minX < $1.box.minX }
+        guard !headers.isEmpty else { throw ImportError.noGridFound }
 
         var order: [Int] = []
-        var samples: [(index: CGFloat, x: CGFloat)] = []
-        var singles: [(index: CGFloat, x: CGFloat)] = []
+        var union = headers[0].box
         var headerY: CGFloat = 0
         for header in headers {
-            let start = CGFloat(order.count)
             order.append(contentsOf: header.weekdays)
-            // つながっているときは、その塊の真ん中が文字列の真ん中にあたる。
-            samples.append((start + CGFloat(header.weekdays.count - 1) / 2, header.x))
-            if header.weekdays.count == 1 { singles.append((start, header.x)) }
-            headerY = max(headerY, header.y)
+            union = union.union(header.box)
+            headerY = max(headerY, header.box.maxY)
         }
-        // つながった塊は中心が内側に寄るので、1文字だけの見出しがあればそちらを基準にする。
-        if singles.count >= 2 { samples = singles }
-        guard order.count >= 3, samples.count >= 2 else { throw ImportError.noGridFound }
+        guard order.count >= 3 else { throw ImportError.noGridFound }
 
-        // 列は等間隔とみなして直線で当てはめる。
-        let n = CGFloat(samples.count)
-        let meanIndex = samples.map(\.index).reduce(0, +) / n
-        let meanX = samples.map(\.x).reduce(0, +) / n
-        let numerator = samples.map { ($0.index - meanIndex) * ($0.x - meanX) }.reduce(0, +)
-        let denominator = samples.map { pow($0.index - meanIndex, 2) }.reduce(0, +)
-        guard denominator > 0 else { throw ImportError.noGridFound }
-        let step = numerator / denominator
-        let origin = meanX - step * meanIndex
+        // 見出しの文字幅ぶんだけ内側に寄っているので、その半分ずつを足し戻す。
+        let characterWidth = min(union.width / CGFloat(order.count), union.height * aspect)
+        let first = union.minX + characterWidth / 2
+        let last = union.maxX - characterWidth / 2
+        let step = (last - first) / CGFloat(order.count - 1)
         guard step > 0.02 else { throw ImportError.noGridFound }
 
-        let centers = order.enumerated().map { (weekday: $1, x: origin + step * CGFloat($0)) }
+        let centers = order.enumerated().map { (weekday: $1, x: first + step * CGFloat($0)) }
         return (centers, step, headerY)
     }
 
     /// 行は、見出しより下の文字を縦方向にまとめて作る。
-    /// 左端の数字が限の番号になる（「4写真演...」のようにつながっていても先頭の数字を見る）。
-    private static func periodRows(from blocks: [Block], below headerY: CGFloat) throws -> [(period: Int, y: CGFloat)] {
+    /// 表の外（左端）にある数字がその行の限。数字が読めない行は表の一部ではないとみなす。
+    private static func periodRows(
+        from blocks: [Block],
+        below headerY: CGFloat,
+        gutterX: CGFloat
+    ) throws -> [(period: Int, y: CGFloat)] {
         let candidates = blocks
             .filter { $0.center.y > headerY }
             .sorted { $0.center.y < $1.center.y }
@@ -212,7 +245,8 @@ enum TimetableImporter {
 
         var rows: [(period: Int, y: CGFloat)] = []
         for cluster in clusters {
-            guard let leftmost = cluster.min(by: { $0.center.x < $1.center.x }) else { continue }
+            guard let leftmost = cluster.min(by: { $0.box.minX < $1.box.minX }) else { continue }
+            guard leftmost.box.minX < gutterX else { continue }
             guard let first = leftmost.text.first, let period = first.wholeNumberValue,
                   (1...9).contains(period) else { continue }
             guard !rows.contains(where: { $0.period == period }) else { continue }
