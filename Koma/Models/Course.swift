@@ -198,6 +198,46 @@ final class Course {
         return finalTitle.isEmpty ? TaskKind.finalAssignment.defaultLabel : finalTitle
     }
 
+    /// 設定だけを写す。名前・コマ・やること・試験は含めない。
+    /// 学期の複製と、授業を分けるときに使う。
+    func copySettings(from other: Course) {
+        teacher = other.teacher
+        room = other.room
+        items = other.items
+        note = other.note
+
+        attendanceChannelsRaw = other.attendanceChannelsRaw
+        attendanceDetail = other.attendanceDetail
+        attendanceWindowMinutes = other.attendanceWindowMinutes
+        attendanceLeadMinutes = other.attendanceLeadMinutes
+        attendanceReminderEnabled = other.attendanceReminderEnabled
+        attendancePrompt = other.attendancePrompt
+
+        fsEnabled = other.fsEnabled
+        fsReminderHour = other.fsReminderHour
+        fsReminderMinute = other.fsReminderMinute
+        fsPrompt = other.fsPrompt
+
+        assignmentEnabled = other.assignmentEnabled
+        assignmentDeadlineModeRaw = other.assignmentDeadlineModeRaw
+        assignmentDueDays = other.assignmentDueDays
+        assignmentDueHour = other.assignmentDueHour
+        assignmentDueMinute = other.assignmentDueMinute
+        assignmentReminderDaysBefore = other.assignmentReminderDaysBefore
+        assignmentReminderHour = other.assignmentReminderHour
+        assignmentReminderMinute = other.assignmentReminderMinute
+        assignmentPrompt = other.assignmentPrompt
+        assignmentNote = other.assignmentNote
+
+        finalEnabled = other.finalEnabled
+        finalTitle = other.finalTitle
+        finalDueDate = other.finalDueDate
+        finalReminderDaysBefore = other.finalReminderDaysBefore
+        finalReminderHour = other.finalReminderHour
+        finalReminderMinute = other.finalReminderMinute
+        finalNote = other.finalNote
+    }
+
     var sortedExams: [Exam] {
         exams.sorted { $0.date < $1.date }
     }

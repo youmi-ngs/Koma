@@ -25,40 +25,9 @@ enum SemesterDuplicator {
                 colorIndex: course.colorIndex,
                 semester: copy
             )
-            newCourse.items = course.items
-            newCourse.note = course.note
-
-            newCourse.attendanceChannelsRaw = course.attendanceChannelsRaw
-            newCourse.attendanceDetail = course.attendanceDetail
-            newCourse.attendanceWindowMinutes = course.attendanceWindowMinutes
-            newCourse.attendanceLeadMinutes = course.attendanceLeadMinutes
-            newCourse.attendanceReminderEnabled = course.attendanceReminderEnabled
-            newCourse.attendancePrompt = course.attendancePrompt
-
-            newCourse.fsEnabled = course.fsEnabled
-            newCourse.fsReminderHour = course.fsReminderHour
-            newCourse.fsReminderMinute = course.fsReminderMinute
-            newCourse.fsPrompt = course.fsPrompt
-
-            newCourse.assignmentEnabled = course.assignmentEnabled
-            newCourse.assignmentDeadlineModeRaw = course.assignmentDeadlineModeRaw
-            newCourse.assignmentDueDays = course.assignmentDueDays
-            newCourse.assignmentDueHour = course.assignmentDueHour
-            newCourse.assignmentDueMinute = course.assignmentDueMinute
-            newCourse.assignmentReminderDaysBefore = course.assignmentReminderDaysBefore
-            newCourse.assignmentReminderHour = course.assignmentReminderHour
-            newCourse.assignmentReminderMinute = course.assignmentReminderMinute
-            newCourse.assignmentPrompt = course.assignmentPrompt
-            newCourse.assignmentNote = course.assignmentNote
-
-            // 最終課題は設定だけ引き継ぎ、締め切りは新しい学期の終わりに置き直す。
-            newCourse.finalEnabled = course.finalEnabled
-            newCourse.finalTitle = course.finalTitle
+            newCourse.copySettings(from: course)
+            // 最終課題の締め切りは新しい学期の終わりに置き直す。
             newCourse.finalDueDate = copy.endDate
-            newCourse.finalReminderDaysBefore = course.finalReminderDaysBefore
-            newCourse.finalReminderHour = course.finalReminderHour
-            newCourse.finalReminderMinute = course.finalReminderMinute
-            newCourse.finalNote = course.finalNote
 
             context.insert(newCourse)
 

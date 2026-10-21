@@ -12,6 +12,7 @@ struct CourseDetailView: View {
     @State private var isConfirmingDelete = false
     @State private var examBeingEdited: Exam?
     @State private var isAddingExam = false
+    @State private var isSplitting = false
 
     private var upcomingTasks: [TaskItem] {
         course.tasks
@@ -43,6 +44,9 @@ struct CourseDetailView: View {
         }
         .sheet(isPresented: $isEditing) {
             CourseEditView(mode: .edit(course))
+        }
+        .sheet(isPresented: $isSplitting) {
+            CourseSplitView(course: course)
         }
         .sheet(isPresented: $isAddingExam) {
             ExamEditView(mode: .create(course: course))
@@ -124,6 +128,14 @@ struct CourseDetailView: View {
                     Text(course.teacher)
                 } label: {
                     Label("Instructor", systemImage: "person")
+                }
+            }
+
+            if course.meetings.count > 1 {
+                Button {
+                    isSplitting = true
+                } label: {
+                    Label("Split into another course", systemImage: "square.split.2x1")
                 }
             }
 

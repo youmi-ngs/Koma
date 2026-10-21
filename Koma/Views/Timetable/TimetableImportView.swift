@@ -15,6 +15,7 @@ struct TimetableImportView: View {
     @State private var errorMessage: String?
     @State private var detected: [DetectedCourse] = []
     @State private var excluded: Set<UUID> = []
+    @State private var splitting: DetectedCourse?
 
     private var chosen: [DetectedCourse] {
         detected.filter { !excluded.contains($0.id) }
@@ -43,6 +44,11 @@ struct TimetableImportView: View {
                         Button("Add \(chosen.count)") { addChosen() }
                             .disabled(chosen.isEmpty)
                     }
+                }
+            }
+            .sheet(item: $splitting) { course in
+                DetectedSplitView(course: course) { slots, name in
+                    split(course, slots: slots, name: name)
                 }
             }
             .onChange(of: pickerItem) { _, item in
@@ -98,7 +104,7 @@ struct TimetableImportView: View {
                     .swipeActions(edge: .trailing) {
                         if course.slots.count > 1 {
                             Button {
-                                split(course)
+                                splitting = course
                             } label: {
                                 Label("Split", systemImage: "square.split.2x1")
                             }
@@ -123,13 +129,17 @@ struct TimetableImportView: View {
 
     // MARK: - 操作
 
-    /// 名前が似ていて1件にまとまってしまったものを、コマごとに分ける。
-    /// 分けたあとに同じ名前を付け直せば、取り込むときにまた1つの授業になる。
-    private func split(_ course: DetectedCourse) {
+    /// 名前が切り詰められて1件にまとまってしまったものから、選んだコマを別の行に出す。
+    /// 3授業に分けたいときは、これを2回繰り返す。
+    private func split(_ course: DetectedCourse, slots: [TimetableSlot], name: String) {
         guard let index = detected.firstIndex(where: { $0.id == course.id }) else { return }
-        let parts = course.slots.map { DetectedCourse(name: course.name, slots: [$0]) }
+        let moving = Set(slots.map(\.id))
+        let remaining = course.slots.filter { !moving.contains($0.id) }
+        guard !remaining.isEmpty, !slots.isEmpty else { return }
+
         withAnimation {
-            detected.replaceSubrange(index...index, with: parts)
+            detected[index] = DetectedCourse(id: course.id, name: course.name, slots: remaining)
+            detected.insert(DetectedCourse(name: name, slots: slots), at: index + 1)
         }
     }
 
