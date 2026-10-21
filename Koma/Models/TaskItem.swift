@@ -1,6 +1,28 @@
 import Foundation
 import SwiftData
 
+/// 出席の結果。押し忘れと欠席を区別するために持つ。
+enum AttendanceOutcome: String, CaseIterable, Identifiable, Codable, Sendable {
+    case present
+    case absent
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .present: return "Present"
+        case .absent: return "Absent"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .present: return "checkmark.circle.fill"
+        case .absent: return "xmark.circle.fill"
+        }
+    }
+}
+
 /// やることの種類。
 enum TaskKind: String, CaseIterable, Identifiable, Codable, Sendable {
     /// 授業の開始直後に、学内サイトで出席を押したか確認する。
@@ -76,6 +98,8 @@ final class TaskItem {
     var period: Int = 0
     /// 試験のときだけ、どの試験のものかを指す。
     var examUID: UUID?
+    /// 出席のときだけ、出たか休んだかを持つ。未記録なら nil。
+    var attendanceOutcomeRaw: String?
     var memo: String = ""
 
     var course: Course?
@@ -109,6 +133,17 @@ final class TaskItem {
     }
 
     var courseName: String { course?.displayName ?? "No course" }
+
+    var attendanceOutcome: AttendanceOutcome? {
+        get { attendanceOutcomeRaw.flatMap(AttendanceOutcome.init(rawValue:)) }
+        set { attendanceOutcomeRaw = newValue?.rawValue }
+    }
+
+    /// 出たか休んだかを記録する。どちらでも「片付いた」扱いにして、やることからは外す。
+    func record(_ outcome: AttendanceOutcome) {
+        attendanceOutcome = outcome
+        markDone(true)
+    }
 
     var exam: Exam? {
         guard let examUID else { return nil }
@@ -165,5 +200,9 @@ final class TaskItem {
     func markDone(_ done: Bool) {
         isDone = done
         completedAt = done ? .now : nil
+        // チェックを外したら、出席の記録も未記録に戻す。
+        if !done { attendanceOutcome = nil }
+        // 出席をチェックしただけなら「出た」とみなす。
+        if done, kind == .attendance, attendanceOutcome == nil { attendanceOutcome = .present }
     }
 }

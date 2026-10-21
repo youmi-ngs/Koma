@@ -293,6 +293,15 @@ struct TaskListView: View {
                         Label("Delete", systemImage: "trash")
                     }
                 }
+                // 押し忘れと欠席は意味が違うので、休んだぶんは記録として残せるようにする。
+                if task.kind == .attendance, task.attendanceOutcome != .absent {
+                    Button {
+                        record(task, as: .absent)
+                    } label: {
+                        Label("Absent", systemImage: "xmark.circle")
+                    }
+                    .tint(.red)
+                }
             }
     }
 
@@ -305,6 +314,14 @@ struct TaskListView: View {
     }
 
     // MARK: - 操作
+
+    private func record(_ task: TaskItem, as outcome: AttendanceOutcome) {
+        withAnimation {
+            task.record(outcome)
+        }
+        try? context.save()
+        Task { await TaskSyncCoordinator.shared.refreshNotifications(context: context) }
+    }
 
     private func toggle(_ task: TaskItem) {
         withAnimation {

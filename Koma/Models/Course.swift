@@ -245,6 +245,20 @@ final class Course {
         exams.sorted { $0.date < $1.date }
     }
 
+    /// これまでの出席の集計。授業がすでに終わった回だけを数える。
+    func attendanceTally(upTo now: Date = .now) -> (present: Int, absent: Int, unrecorded: Int) {
+        let past = tasks.filter { $0.kind == .attendance && $0.classDate <= now }
+        var present = 0, absent = 0, unrecorded = 0
+        for task in past {
+            switch task.attendanceOutcome {
+            case .present: present += 1
+            case .absent: absent += 1
+            case nil: unrecorded += 1
+            }
+        }
+        return (present, absent, unrecorded)
+    }
+
     var sortedMakeups: [MakeupClass] {
         makeups.sorted { $0.date == $1.date ? $0.period < $1.period : $0.date < $1.date }
     }

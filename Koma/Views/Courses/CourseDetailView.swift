@@ -193,6 +193,18 @@ struct CourseDetailView: View {
                 }
             }
 
+            NavigationLink {
+                AttendanceRecordView(course: course)
+            } label: {
+                let tally = course.attendanceTally()
+                LabeledContent {
+                    Text(tally.absent > 0 ? "\(tally.present) present · \(tally.absent) absent" : "\(tally.present) present")
+                        .foregroundStyle(tally.absent > 0 ? Color.red : .secondary)
+                } label: {
+                    Label("Record", systemImage: "list.bullet.rectangle")
+                }
+            }
+
             if !course.attendanceDetail.isEmpty {
                 Text(course.attendanceDetail)
                     .font(.subheadline)
