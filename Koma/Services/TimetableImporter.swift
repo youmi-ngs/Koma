@@ -22,6 +22,7 @@ struct DetectedCourse: Identifiable, Hashable {
 /// ポータルの時間割のスクリーンショットから、コマを読み取る。
 /// 端末内の Vision だけを使うので、画像が外に出ることはない。
 enum TimetableImporter {
+
     enum ImportError: LocalizedError {
         case unreadableImage
         case noGridFound
@@ -55,7 +56,10 @@ enum TimetableImporter {
         guard !blocks.isEmpty else { throw ImportError.noGridFound }
 
         let aspect = CGFloat(cgImage.height) / CGFloat(cgImage.width)
-        let columns = try weekdayColumns(from: blocks, aspect: aspect)
+        // 見出しは白抜きで読み落としやすい（6曜日のうち2つしか拾えないことがある）。
+        // 見出しの行だけを細い帯で切って読み直すと、1文字ずつ正確に取れる。
+        let headerBlocks = try await headerLine(in: cgImage, hintedBy: blocks)
+        let columns = try weekdayColumns(from: headerBlocks + blocks, aspect: aspect)
         let gutterX = columns.centers[0].x - columns.width / 2
         let rows = try periodRows(
             from: blocks,
@@ -89,6 +93,26 @@ enum TimetableImporter {
         }
 
         return courses(from: cells)
+    }
+
+    /// 見出しの行だけを帯で切り出して読み直す。
+    private static func headerLine(in cgImage: CGImage, hintedBy blocks: [Block]) async throws -> [Block] {
+        let anchors = blocks.filter { block in
+            let weekdays = block.text.compactMap { weekdaySymbols[String($0)] }
+            return !weekdays.isEmpty && weekdays.count == block.text.count
+        }
+        guard let anchor = anchors.min(by: { $0.center.y < $1.center.y }) else {
+            throw ImportError.noGridFound
+        }
+        let height = max(anchor.box.height, medianHeight(blocks))
+        let band = CGRect(
+            x: 0,
+            y: max(0, anchor.center.y - height * 2),
+            width: 1,
+            height: min(1, height * 4)
+        )
+        let line = try await recognize(cgImage, in: band)
+        return line.isEmpty ? anchors : line
     }
 
     /// 小さい画像は引き伸ばしてから読む。文字が小さいままだと精度が落ちるため。
@@ -190,41 +214,68 @@ enum TimetableImporter {
         "Sun": 1, "Mon": 2, "Tue": 3, "Wed": 4, "Thu": 5, "Fri": 6, "Sat": 7,
     ]
 
+    /// 月曜を 0 とした、その週での位置。曜日が1つ読めなくても列がずれないようにするために使う。
+    private static func weekIndex(of weekday: Int) -> Int {
+        weekday == 1 ? 6 : weekday - 2
+    }
+
+    private static func weekday(atWeekIndex index: Int) -> Int {
+        index == 6 ? 1 : index + 2
+    }
+
     /// 曜日の見出しから列を割り出す。
-    /// 見出しは「火水」のようにつながって読まれることがあるので、
-    /// 中心ではなく**見出し全体の左端から右端まで**を使って等間隔に割る。
+    /// 読めた曜日を「週での定位置」に置いて直線を当てはめるので、
+    /// 6曜日のうち何個か読み落としても、残りの列がずれない。
     private static func weekdayColumns(
         from blocks: [Block],
         aspect: CGFloat
     ) throws -> (centers: [(weekday: Int, x: CGFloat)], width: CGFloat, headerY: CGFloat) {
-        var headers: [(weekdays: [Int], box: CGRect)] = []
-        for block in blocks {
-            let weekdays = block.text.compactMap { weekdaySymbols[String($0)] }
-            guard weekdays.count == block.text.count, !weekdays.isEmpty else { continue }
-            headers.append((weekdays, block.box))
-        }
-        headers.sort { $0.box.minX < $1.box.minX }
-        guard !headers.isEmpty else { throw ImportError.noGridFound }
-
-        var order: [Int] = []
-        var union = headers[0].box
+        var samples: [(index: CGFloat, x: CGFloat)] = []
+        var seen: Set<Int> = []
         var headerY: CGFloat = 0
-        for header in headers {
-            order.append(contentsOf: header.weekdays)
-            union = union.union(header.box)
-            headerY = max(headerY, header.box.maxY)
+
+        for block in blocks.sorted(by: { $0.box.minX < $1.box.minX }) {
+            let weekdays = block.text.compactMap { weekdaySymbols[String($0)] }
+            guard !weekdays.isEmpty, weekdays.count == block.text.count else { continue }
+            headerY = max(headerY, block.box.maxY)
+
+            // つながって読まれた塊は、枠の中で等間隔に並んでいるとみなす。
+            let width = block.box.width / CGFloat(weekdays.count)
+            for (offset, weekday) in weekdays.enumerated() {
+                let index = weekIndex(of: weekday)
+                guard seen.insert(index).inserted else { continue }
+                samples.append((CGFloat(index), block.box.minX + width * (CGFloat(offset) + 0.5)))
+            }
         }
-        guard order.count >= 3 else { throw ImportError.noGridFound }
+        guard samples.count >= 2 else { throw ImportError.noGridFound }
 
-        // 見出しの文字幅ぶんだけ内側に寄っているので、その半分ずつを足し戻す。
-        let characterWidth = min(union.width / CGFloat(order.count), union.height * aspect)
-        let first = union.minX + characterWidth / 2
-        let last = union.maxX - characterWidth / 2
-        let step = (last - first) / CGFloat(order.count - 1)
-        guard step > 0.02 else { throw ImportError.noGridFound }
+        var fit = try line(through: samples)
+        // 誤読で飛んだ点は捨ててもう一度当てはめる。
+        let kept = samples.filter { abs($0.x - (fit.origin + fit.step * $0.index)) < fit.step * 0.4 }
+        if kept.count >= 2, kept.count < samples.count {
+            fit = try line(through: kept)
+        }
+        guard fit.step > 0.02 else { throw ImportError.noGridFound }
 
-        let centers = order.enumerated().map { (weekday: $1, x: first + step * CGFloat($0)) }
-        return (centers, step, headerY)
+        let indices = samples.map { Int($0.index) }
+        guard let low = indices.min(), let high = indices.max(), high > low else {
+            throw ImportError.noGridFound
+        }
+        let centers = (low...high).map {
+            (weekday: weekday(atWeekIndex: $0), x: fit.origin + fit.step * CGFloat($0))
+        }
+        return (centers, fit.step, headerY)
+    }
+
+    private static func line(through samples: [(index: CGFloat, x: CGFloat)]) throws -> (origin: CGFloat, step: CGFloat) {
+        let n = CGFloat(samples.count)
+        let meanIndex = samples.map(\.index).reduce(0, +) / n
+        let meanX = samples.map(\.x).reduce(0, +) / n
+        let numerator = samples.map { ($0.index - meanIndex) * ($0.x - meanX) }.reduce(0, +)
+        let denominator = samples.map { pow($0.index - meanIndex, 2) }.reduce(0, +)
+        guard denominator > 0 else { throw ImportError.noGridFound }
+        let step = numerator / denominator
+        return (meanX - step * meanIndex, step)
     }
 
     /// 行は、見出しより下の文字を縦方向にまとめて作る。
@@ -346,6 +397,7 @@ enum TimetableImporter {
     private static func cleaned(_ text: String) -> String {
         let value = text
             .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"^[.．。・…（）\(\)「」【】|｜:：]+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"[.．。・…（）\(\)「」【】]+$"#, with: "", options: .regularExpression)
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
