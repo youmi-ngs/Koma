@@ -57,13 +57,19 @@ enum TimetableImporter {
         let aspect = CGFloat(cgImage.height) / CGFloat(cgImage.width)
         let columns = try weekdayColumns(from: blocks, aspect: aspect)
         let gutterX = columns.centers[0].x - columns.width / 2
-        let rows = try periodRows(from: blocks, below: columns.headerY, gutterX: gutterX)
+        let rows = try periodRows(
+            from: blocks,
+            below: columns.headerY,
+            gutterX: gutterX,
+            lineHeight: medianHeight(blocks)
+        )
 
         // 2回目は曜日ごとに縦に切って読む。
         // 切らずに読むと「火水」「4写真演...Webプ...」のように行がつながってしまうため。
         var cells: [String: String] = [:]
         let rowGap = medianGap(rows.map(\.y))
-        let top = max(0, rows.first!.y - rowGap)
+        // 見出しより上は表ではない。ここを含めると曜日の文字が1限のセルに混ざる。
+        let top = max(columns.headerY, rows.first!.y - rowGap)
         let bottom = min(1, rows.last!.y + rowGap)
 
         for column in columns.centers {
@@ -226,7 +232,8 @@ enum TimetableImporter {
     private static func periodRows(
         from blocks: [Block],
         below headerY: CGFloat,
-        gutterX: CGFloat
+        gutterX: CGFloat,
+        lineHeight: CGFloat
     ) throws -> [(period: Int, y: CGFloat)] {
         let candidates = blocks
             .filter { $0.center.y > headerY }
@@ -234,8 +241,10 @@ enum TimetableImporter {
 
         var clusters: [[Block]] = []
         for block in candidates {
+            // 同じ行とみなす幅は文字の高さを基準にする。
+            // 画像全体に対する比率で持つと、切り取った画像で意味が変わってしまう。
             if var last = clusters.last, let reference = last.first,
-               abs(block.center.y - reference.center.y) < 0.012 {
+               abs(block.center.y - reference.center.y) < lineHeight * 0.8 {
                 last.append(block)
                 clusters[clusters.count - 1] = last
             } else {
@@ -255,7 +264,25 @@ enum TimetableImporter {
         }
         rows.sort { $0.y < $1.y }
         guard rows.count >= 2 else { throw ImportError.noGridFound }
-        return rows
+        return filled(rows)
+    }
+
+    /// 左端の数字を読み落とすと、その限の行ごと落ちてしまう。
+    /// 見つかった行の**あいだ**だけ等間隔で補う。外側へは伸ばさない（表の外を拾ってしまうため）。
+    private static func filled(_ rows: [(period: Int, y: CGFloat)]) -> [(period: Int, y: CGFloat)] {
+        var result: [(period: Int, y: CGFloat)] = []
+        for (index, row) in rows.enumerated() {
+            result.append(row)
+            guard index + 1 < rows.count else { continue }
+            let next = rows[index + 1]
+            let missing = next.period - row.period - 1
+            guard missing > 0, missing <= 3 else { continue }
+            let step = (next.y - row.y) / CGFloat(missing + 1)
+            for offset in 1...missing {
+                result.append((row.period + offset, row.y + step * CGFloat(offset)))
+            }
+        }
+        return result.sorted { $0.y < $1.y }
     }
 
     /// 同じ名前のマスをひとつの授業にまとめる。
@@ -321,6 +348,12 @@ enum TimetableImporter {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: #"[.．。・…（）\(\)「」【】]+$"#, with: "", options: .regularExpression)
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func medianHeight(_ blocks: [Block]) -> CGFloat {
+        let heights = blocks.map(\.box.height).sorted()
+        guard !heights.isEmpty else { return 0.012 }
+        return heights[heights.count / 2]
     }
 
     private static func medianGap(_ values: [CGFloat]) -> CGFloat {

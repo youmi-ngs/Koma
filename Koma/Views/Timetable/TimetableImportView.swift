@@ -95,11 +95,21 @@ struct TimetableImportView: View {
                         }
                     }
                     .padding(.vertical, 2)
+                    .swipeActions(edge: .trailing) {
+                        if course.slots.count > 1 {
+                            Button {
+                                split(course)
+                            } label: {
+                                Label("Split", systemImage: "square.split.2x1")
+                            }
+                            .tint(.indigo)
+                        }
+                    }
                 }
             } header: {
                 Text("Found \(detected.count)")
             } footer: {
-                Text("Names come from the screenshot, so anything the portal cut off is cut off here too. Fix them now or edit the course later.")
+                Text("Names come from the screenshot, so anything the portal cut off is cut off here too. Two courses whose names were cut to the same thing end up as one row: swipe it to split, then rename the parts. Rows sharing a name are added as a single course.")
             }
 
             Section {
@@ -112,6 +122,16 @@ struct TimetableImportView: View {
     }
 
     // MARK: - 操作
+
+    /// 名前が似ていて1件にまとまってしまったものを、コマごとに分ける。
+    /// 分けたあとに同じ名前を付け直せば、取り込むときにまた1つの授業になる。
+    private func split(_ course: DetectedCourse) {
+        guard let index = detected.firstIndex(where: { $0.id == course.id }) else { return }
+        let parts = course.slots.map { DetectedCourse(name: course.name, slots: [$0]) }
+        withAnimation {
+            detected.replaceSubrange(index...index, with: parts)
+        }
+    }
 
     private func toggle(_ id: UUID) {
         if excluded.contains(id) {
@@ -147,16 +167,25 @@ struct TimetableImportView: View {
     }
 
     private func addChosen() {
-        var colorIndex = semester.courses.count
+        // 同じ名前の行はひとつの授業にまとめる。分けたあと名前を揃え直せば元どおりになる。
+        var slotsByName: [(name: String, slots: [TimetableSlot])] = []
         for detectedCourse in chosen {
             let name = detectedCourse.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { continue }
+            if let index = slotsByName.firstIndex(where: { $0.name == name }) {
+                slotsByName[index].slots.append(contentsOf: detectedCourse.slots)
+            } else {
+                slotsByName.append((name, detectedCourse.slots))
+            }
+        }
 
-            let course = Course(name: name, colorIndex: colorIndex, semester: semester)
+        var colorIndex = semester.courses.count
+        for entry in slotsByName {
+            let course = Course(name: entry.name, colorIndex: colorIndex, semester: semester)
             context.insert(course)
             colorIndex += 1
 
-            for slot in detectedCourse.slots {
+            for slot in entry.slots {
                 let meeting = Meeting(weekday: slot.weekday, period: slot.period)
                 meeting.course = course
                 context.insert(meeting)
