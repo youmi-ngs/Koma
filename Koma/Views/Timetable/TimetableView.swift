@@ -78,7 +78,8 @@ struct TimetableView: View {
                 TodayClassesSection(
                     semester: semester,
                     onSelectCourse: { course in selectedCourse = course },
-                    onToggleCancelled: toggleCancelledToday
+                    onToggleCancelled: toggleCancelledToday,
+                    onRecord: recordAttendance
                 )
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -108,6 +109,20 @@ struct TimetableView: View {
         // 中身の高さが確定したあとも先頭を保つ。
         .defaultScrollAnchor(.top)
         .background(Color(.systemGroupedBackground))
+    }
+
+    /// 今日のその回の出席を記録する。連続コマはまとめて付けられる。
+    private func recordAttendance(_ course: Course, periods: [Int], as outcome: AttendanceOutcome) {
+        let calendar = Calendar.current
+        let targets = course.tasks.filter {
+            $0.kind == .attendance
+                && calendar.isDateInToday($0.classDate)
+                && periods.contains($0.period)
+        }
+        guard !targets.isEmpty else { return }
+        for task in targets { task.record(outcome) }
+        try? context.save()
+        Task { await TaskSyncCoordinator.shared.refreshNotifications(context: context) }
     }
 
     /// 今日の回を休講にする／戻す。

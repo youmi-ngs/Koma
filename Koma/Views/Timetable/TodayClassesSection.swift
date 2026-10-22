@@ -6,6 +6,7 @@ struct TodayClassesSection: View {
     let semester: Semester
     let onSelectCourse: (Course) -> Void
     let onToggleCancelled: (Course) -> Void
+    let onRecord: (Course, [Int], AttendanceOutcome) -> Void
 
     private var today: Date { .now }
 
@@ -116,10 +117,41 @@ struct TodayClassesSection: View {
                         Button {
                             onSelectCourse(block.course)
                         } label: {
-                            TodayClassRow(block: block, isCancelled: isCancelledToday(block.course))
+                            TodayClassRow(
+                                block: block,
+                                isCancelled: isCancelledToday(block.course),
+                                outcome: outcome(for: block)
+                            )
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
+                            if !isCancelledToday(block.course), !block.course.attendanceChannels.isEmpty {
+                                Section(block.periods.count > 1 ? "Both periods" : "Attendance") {
+                                    ForEach(AttendanceOutcome.allCases) { value in
+                                        Button {
+                                            onRecord(block.course, block.periods, value)
+                                        } label: {
+                                            Label(value.title, systemImage: value.symbolName)
+                                        }
+                                    }
+                                }
+
+                                // 連続コマは片方だけ出た、ということがあるので限ごとにも選べるようにする。
+                                if block.periods.count > 1 {
+                                    ForEach(block.periods, id: \.self) { period in
+                                        Menu("P\(period)") {
+                                            ForEach(AttendanceOutcome.allCases) { value in
+                                                Button {
+                                                    onRecord(block.course, [period], value)
+                                                } label: {
+                                                    Label(value.title, systemImage: value.symbolName)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             Button {
                                 onToggleCancelled(block.course)
                             } label: {
@@ -144,6 +176,21 @@ struct TodayClassesSection: View {
         course.isCancelled(on: today)
     }
 
+    /// その回の出席記録。コマごとに食い違っているときは出さない。
+    private func outcome(for block: Block) -> AttendanceOutcome? {
+        let calendar = Calendar.current
+        let outcomes = block.course.tasks
+            .filter {
+                $0.kind == .attendance
+                    && calendar.isDate($0.classDate, inSameDayAs: today)
+                    && block.periods.contains($0.period)
+            }
+            .map(\.attendanceOutcome)
+        guard let first = outcomes.first, !outcomes.isEmpty,
+              outcomes.allSatisfy({ $0 == first }) else { return nil }
+        return first
+    }
+
     private func infoCard(symbol: String, text: String) -> some View {
         Label(text, systemImage: symbol)
             .font(.subheadline)
@@ -157,6 +204,7 @@ struct TodayClassesSection: View {
 private struct TodayClassRow: View {
     let block: TodayClassesSection.Block
     let isCancelled: Bool
+    let outcome: AttendanceOutcome?
 
     private var course: Course { block.course }
 
@@ -203,6 +251,14 @@ private struct TodayClassRow: View {
                             .padding(.vertical, 2)
                             .background(Color.orange.opacity(0.18), in: .capsule)
                             .foregroundStyle(.orange)
+                    } else if let outcome {
+                        let tint: Color = outcome == .present ? .green : (outcome == .late ? .orange : .red)
+                        Text(outcome.title)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(tint.opacity(0.18), in: .capsule)
+                            .foregroundStyle(tint)
                     } else if block.isMakeup {
                         Text("Make-up")
                             .font(.caption.weight(.semibold))
