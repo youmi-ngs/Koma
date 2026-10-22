@@ -197,9 +197,10 @@ struct CourseDetailView: View {
                 AttendanceRecordView(course: course)
             } label: {
                 let tally = course.attendanceTally()
+                let missed = tally.absent + tally.late
                 LabeledContent {
-                    if let outlook = course.creditOutlook(), tally.absent > 0 || outlook.canMiss <= 2 {
-                        Text("\(tally.absent) absent · can miss \(outlook.canMiss)")
+                    if let outlook = course.creditOutlook(), missed > 0 || outlook.canMiss <= 2 {
+                        Text("\(missed) missed · can miss \(outlook.canMiss)")
                             .foregroundStyle(outlook.canMiss == 0 ? Color.red : Color.orange)
                     } else {
                         Text("\(tally.present) present")

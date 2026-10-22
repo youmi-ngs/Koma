@@ -195,7 +195,7 @@ struct CourseEditView: View {
             return "Choose how attendance is taken. A course can use a site and in-person roll call at the same time."
         }
         guard draft.usesOnlineAttendance else {
-            return "The instructor records attendance, so no reminder is needed."
+            return "The instructor records attendance, so no reminder is sent. Each class is still listed under Record, so absences and late arrivals can be kept there."
         }
         let sites = draft.onlineAttendanceChannels.map(\.shortTitle).formatted(.list(type: .and))
         let window = max(1, draft.attendanceWindowMinutes)

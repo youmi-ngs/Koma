@@ -40,7 +40,7 @@ enum TaskBoard {
 
         // 出席だけは授業中の数分しか押せないので、今日ぶんを独立させる。
         let checkIn = open
-            .filter { !$0.isManual && $0.kind == .attendance && calendar.isDateInToday($0.dueDate) }
+            .filter { !$0.isManual && $0.kind == .attendance && $0.requiresAction && calendar.isDateInToday($0.dueDate) }
             .sorted(by: inOrder)
 
         // FS と課題は授業が終わってから期限までのあいだ手を動かせる。

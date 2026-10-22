@@ -4,6 +4,7 @@ import SwiftData
 /// 出席の結果。押し忘れと欠席を区別するために持つ。
 enum AttendanceOutcome: String, CaseIterable, Identifiable, Codable, Sendable {
     case present
+    case late
     case absent
 
     var id: String { rawValue }
@@ -11,6 +12,7 @@ enum AttendanceOutcome: String, CaseIterable, Identifiable, Codable, Sendable {
     var title: String {
         switch self {
         case .present: return "Present"
+        case .late: return "Late"
         case .absent: return "Absent"
         }
     }
@@ -18,9 +20,13 @@ enum AttendanceOutcome: String, CaseIterable, Identifiable, Codable, Sendable {
     var symbolName: String {
         switch self {
         case .present: return "checkmark.circle.fill"
+        case .late: return "clock.badge.exclamationmark.fill"
         case .absent: return "xmark.circle.fill"
         }
     }
+
+    /// 出席率の計算で「出ていない」として数えるかどうか。遅刻は欠席と同じ扱い。
+    var countsAsMissed: Bool { self != .present }
 }
 
 /// やることの種類。
@@ -143,6 +149,13 @@ final class TaskItem {
     func record(_ outcome: AttendanceOutcome) {
         attendanceOutcome = outcome
         markDone(true)
+    }
+
+    /// 自分で何かする必要がある回かどうか。
+    /// 対面で先生が取る出席は、こちらが操作することがないのでやることには出さない。
+    var requiresAction: Bool {
+        guard kind == .attendance else { return true }
+        return course?.usesOnlineAttendance ?? true
     }
 
     var exam: Exam? {

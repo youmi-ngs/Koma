@@ -49,7 +49,8 @@ struct TaskListView: View {
     private var missedTasks: [TaskItem] {
         let today = Calendar.current.startOfDay(for: .now)
         return openTasks
-            .filter { $0.dueDate < today }
+            // 自分で押す必要のない出席は、記録がなくてもやり損ねではない。
+            .filter { $0.dueDate < today && $0.requiresAction }
             .sorted { TaskBoard.inOrder($1, $0) }
     }
 
@@ -301,6 +302,17 @@ struct TaskListView: View {
                         Label("Absent", systemImage: "xmark.circle")
                     }
                     .tint(.red)
+                }
+            }
+            .contextMenu {
+                if task.kind == .attendance {
+                    ForEach(AttendanceOutcome.allCases) { outcome in
+                        Button {
+                            record(task, as: outcome)
+                        } label: {
+                            Label(outcome.title, systemImage: outcome.symbolName)
+                        }
+                    }
                 }
             }
     }

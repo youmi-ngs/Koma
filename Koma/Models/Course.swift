@@ -269,22 +269,30 @@ final class Course {
         let ratio = Double(max(0, min(100, attendanceThresholdPercent))) / 100
         // p / total > ratio を満たす最小の整数
         let needed = min(total, Int((Double(total) * ratio).rounded(.down)) + 1)
-        let absent = attendanceTally(upTo: now).absent
-        return (total, needed, max(0, total - needed - absent))
+        // 遅刻は出席に数えないので、欠席と同じように枠を消費する。
+        let tally = attendanceTally(upTo: now)
+        let missed = tally.absent + tally.late
+        return (total, needed, max(0, total - needed - missed))
+    }
+
+    /// 出席の通知を出すか。サイトで自分が押す必要がある授業だけ。
+    var sendsAttendanceReminder: Bool {
+        attendanceReminderEnabled && usesOnlineAttendance
     }
 
     /// これまでの出席の集計。授業がすでに終わった回だけを数える。
-    func attendanceTally(upTo now: Date = .now) -> (present: Int, absent: Int, unrecorded: Int) {
+    func attendanceTally(upTo now: Date = .now) -> (present: Int, late: Int, absent: Int, unrecorded: Int) {
         let past = tasks.filter { $0.kind == .attendance && $0.classDate <= now }
-        var present = 0, absent = 0, unrecorded = 0
+        var present = 0, late = 0, absent = 0, unrecorded = 0
         for task in past {
             switch task.attendanceOutcome {
             case .present: present += 1
+            case .late: late += 1
             case .absent: absent += 1
             case nil: unrecorded += 1
             }
         }
-        return (present, absent, unrecorded)
+        return (present, late, absent, unrecorded)
     }
 
     var sortedMakeups: [MakeupClass] {
@@ -367,8 +375,8 @@ final class Course {
 
     func isEnabled(_ kind: TaskKind) -> Bool {
         switch kind {
-        // 対面だけの授業は自分で操作する必要がないので通知しない。
-        case .attendance: return attendanceReminderEnabled && usesOnlineAttendance
+        // 対面だけの授業でも記録は残せるようにする。通知を出すかは別で判断する。
+        case .attendance: return !attendanceChannels.isEmpty
         case .feedbackSheet: return fsEnabled
         case .assignment: return assignmentEnabled
         case .finalAssignment: return finalEnabled

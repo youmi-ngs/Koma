@@ -283,6 +283,8 @@ enum TaskScheduler {
                 continue
             }
 
+            // 対面だけの出席は記録用に作るだけで、通知は出さない。
+            if task.kind == .attendance, task.course?.sendsAttendanceReminder == false { continue }
             guard task.notifyDate > now else { continue }
             plans.append(ReminderPlan(
                 id: task.uid.uuidString,

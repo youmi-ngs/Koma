@@ -44,6 +44,13 @@ struct AttendanceRecordView: View {
             Section {
                 let tally = course.attendanceTally()
                 LabeledContent("Present") { Text("\(tally.present)").monospacedDigit() }
+                if tally.late > 0 {
+                    LabeledContent("Late") {
+                        Text("\(tally.late)")
+                            .monospacedDigit()
+                            .foregroundStyle(.orange)
+                    }
+                }
                 LabeledContent("Absent") {
                     Text("\(tally.absent)")
                         .monospacedDigit()
@@ -57,7 +64,7 @@ struct AttendanceRecordView: View {
             } header: {
                 Text("So far")
             } footer: {
-                Text("Counts the classes that have already happened, one per period.")
+                Text("Counts the classes that have already happened, one per period. Late does not count as attending.")
             }
 
             if let outlook = course.creditOutlook() {
@@ -125,7 +132,15 @@ struct AttendanceRecordView: View {
             }
             .labelsHidden()
             .pickerStyle(.menu)
-            .tint(task.attendanceOutcome == .absent ? .red : .accentColor)
+            .tint(tint(for: task.attendanceOutcome))
+        }
+    }
+
+    private func tint(for outcome: AttendanceOutcome?) -> Color {
+        switch outcome {
+        case .absent: return .red
+        case .late: return .orange
+        default: return .accentColor
         }
     }
 

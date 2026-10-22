@@ -26,13 +26,14 @@ struct TaskRow: View {
                         .font(.body.weight(.medium))
                         .strikethrough(task.isDone, color: .secondary)
                         .foregroundStyle(task.isDone ? .secondary : .primary)
-                    if task.attendanceOutcome == .absent {
-                        Text("Absent")
+                    if let outcome = task.attendanceOutcome, outcome.countsAsMissed {
+                        let tint: Color = outcome == .absent ? .red : .orange
+                        Text(outcome.title)
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(Color.red.opacity(0.16), in: .capsule)
-                            .foregroundStyle(.red)
+                            .background(tint.opacity(0.16), in: .capsule)
+                            .foregroundStyle(tint)
                     }
                 }
 
