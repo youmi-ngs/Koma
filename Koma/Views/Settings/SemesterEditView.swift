@@ -20,6 +20,9 @@ struct SemesterEditView: View {
     @State private var showsSaturday: Bool
     @State private var showsSunday: Bool
     @State private var makeCurrent: Bool
+    @State private var breaks: [TermBreak]
+    @State private var breakBeingEdited: TermBreak?
+    @State private var isAddingBreak = false
 
     init(mode: Mode) {
         self.mode = mode
@@ -32,6 +35,7 @@ struct SemesterEditView: View {
             _showsSaturday = State(initialValue: true)
             _showsSunday = State(initialValue: false)
             _makeCurrent = State(initialValue: true)
+            _breaks = State(initialValue: [])
         case let .edit(semester):
             _name = State(initialValue: semester.name)
             _startDate = State(initialValue: semester.startDate)
@@ -39,6 +43,7 @@ struct SemesterEditView: View {
             _showsSaturday = State(initialValue: semester.showsSaturday)
             _showsSunday = State(initialValue: semester.showsSunday)
             _makeCurrent = State(initialValue: semester.isCurrent)
+            _breaks = State(initialValue: semester.breaks)
         }
     }
 
@@ -52,15 +57,28 @@ struct SemesterEditView: View {
         return nil
     }
 
-    /// 期間が何週あるか。端数は切り上げる。
-    private var weekCount: Int {
+    /// 曜日ごとに、その期間に授業が何回あるか。休みの期間は除く。
+    /// 週数だけだと端数や休みが隠れて、出席率の母数がずれていても気づけない。
+    private var classCountSummary: String {
         let calendar = Calendar.current
-        let days = calendar.dateComponents(
-            [.day],
-            from: calendar.startOfDay(for: startDate),
-            to: calendar.startOfDay(for: endDate)
-        ).day ?? 0
-        return max(1, Int((Double(days + 1) / 7).rounded(.up)))
+        let start = calendar.startOfDay(for: startDate)
+        let end = calendar.startOfDay(for: endDate)
+        guard start <= end else { return "Set an end date after the start" }
+
+        var weekdays = [2, 3, 4, 5, 6]
+        if showsSaturday { weekdays.append(7) }
+        if showsSunday { weekdays.insert(1, at: 0) }
+
+        let counts = weekdays.map { weekday -> (String, Int) in
+            let days = ClassDays.occurrences(weekday: weekday, from: start, to: end, calendar: calendar)
+                .filter { day in !breaks.contains { $0.contains(day, calendar: calendar) } }
+            return (WeekdayText.short(weekday), days.count)
+        }
+
+        if Set(counts.map(\.1)).count == 1, let value = counts.first?.1 {
+            return "\(value) classes for every weekly slot"
+        }
+        return counts.map { "\($0.0) \($0.1)" }.joined(separator: " · ")
     }
 
     private var isValid: Bool {
@@ -92,7 +110,31 @@ struct SemesterEditView: View {
                 Text("Dates")
             } footer: {
                 // 期間がずれていると授業回数が合わなくなり、出席率の見込みまで狂う。
-                Text("\(weekCount) weeks, so a weekly slot holds \(weekCount) classes. Reminders are created only for class days inside this range.")
+                Text("\(classCountSummary). Reminders are created only for class days inside this range.")
+            }
+
+            Section {
+                ForEach(breaks.sorted { $0.start < $1.start }) { item in
+                    Button {
+                        breakBeingEdited = item
+                    } label: {
+                        HStack {
+                            Text(item.displayName).foregroundStyle(.primary)
+                            Spacer()
+                            Text(item.rangeText).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Button {
+                    isAddingBreak = true
+                } label: {
+                    Label("Add break", systemImage: "plus.circle.fill")
+                }
+            } header: {
+                Text("Breaks")
+            } footer: {
+                Text("A stretch in the middle of the term with no classes, such as the winter break. It applies to every course, and the counts above leave it out.")
             }
 
             Section("Days Shown") {
@@ -116,6 +158,20 @@ struct SemesterEditView: View {
                         }
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $isAddingBreak) {
+            TermBreakEditView(existing: nil) { newBreak in
+                breaks.append(newBreak)
+            }
+        }
+        .sheet(item: $breakBeingEdited) { item in
+            TermBreakEditView(existing: item) { updated in
+                if let index = breaks.firstIndex(where: { $0.id == updated.id }) {
+                    breaks[index] = updated
+                }
+            } onDelete: {
+                breaks.removeAll { $0.id == item.id }
             }
         }
         .navigationTitle(isNew ? "Add Semester" : "Edit Semester")
@@ -147,6 +203,7 @@ struct SemesterEditView: View {
                 name: trimmed,
                 startDate: startDate,
                 endDate: endDate,
+                breaks: breaks,
                 showsSaturday: showsSaturday,
                 showsSunday: showsSunday
             )
@@ -158,6 +215,7 @@ struct SemesterEditView: View {
             semester.name = trimmed
             semester.startDate = startDate
             semester.endDate = endDate
+            semester.breaks = breaks
             semester.showsSaturday = showsSaturday
             semester.showsSunday = showsSunday
             if makeCurrent {

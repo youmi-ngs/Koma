@@ -46,6 +46,7 @@ enum ClassDays {
         for meeting in course.meetings {
             let slot = semester.period(at: meeting.period)
             for day in occurrences(weekday: meeting.weekday, from: rangeStart, to: rangeEnd, calendar: calendar) {
+                guard !semester.isBreak(day, calendar: calendar) else { continue }
                 guard !course.isCancelled(on: day, calendar: calendar) else { continue }
                 guard let begin = calendar.date(
                     bySettingHour: slot?.startHour ?? 9,
@@ -88,6 +89,7 @@ enum ClassDays {
         func add(day: Date, period: Int) {
             let day = calendar.startOfDay(for: day)
             guard day >= start, day <= end else { return }
+            guard !semester.isBreak(day, calendar: calendar) else { return }
             guard !course.isCancelled(on: day, calendar: calendar) else { return }
             let slot = semester.period(at: period)
             guard let begin = calendar.date(
@@ -112,17 +114,21 @@ enum ClassDays {
         return Array(Set(result)).sorted { $0.start < $1.start }
     }
 
-    /// その授業がある日（休講を含む）を重複なく時系列で返す。
+    /// その授業がある日（休講を含む）を重複なく時系列で返す。学期の休みは除く。
+    @MainActor
     static func allDays(
         for course: Course,
         from start: Date,
         to end: Date,
         calendar: Calendar = .current
     ) -> [Date] {
+        let semester = course.semester
         var days: Set<Date> = []
         for meeting in course.meetings {
             for day in occurrences(weekday: meeting.weekday, from: start, to: end, calendar: calendar) {
-                days.insert(calendar.startOfDay(for: day))
+                let day = calendar.startOfDay(for: day)
+                if semester?.isBreak(day, calendar: calendar) == true { continue }
+                days.insert(day)
             }
         }
         return days.sorted()

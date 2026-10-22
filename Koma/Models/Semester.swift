@@ -11,6 +11,8 @@ final class Semester {
     var isCurrent: Bool = false
     /// この学期のコマの時間設定。
     var periods: [PeriodSlot] = PeriodSlot.standard
+    /// 学期の途中に入る休み。冬休みのように全授業が止まる期間。
+    var breaks: [TermBreak] = []
     var showsSaturday: Bool = true
     var showsSunday: Bool = false
     var createdAt: Date = Date.now
@@ -24,6 +26,7 @@ final class Semester {
         endDate: Date,
         isCurrent: Bool = false,
         periods: [PeriodSlot] = PeriodSlot.standard,
+        breaks: [TermBreak] = [],
         showsSaturday: Bool = true,
         showsSunday: Bool = false
     ) {
@@ -32,6 +35,7 @@ final class Semester {
         self.endDate = endDate
         self.isCurrent = isCurrent
         self.periods = periods
+        self.breaks = breaks
         self.showsSaturday = showsSaturday
         self.showsSunday = showsSunday
         self.createdAt = .now
@@ -54,6 +58,11 @@ final class Semester {
         let start = startDate.formatted(.dateTime.year().month(.abbreviated).day())
         let end = endDate.formatted(.dateTime.year().month(.abbreviated).day())
         return "\(start) – \(end)"
+    }
+
+    /// 休みの期間に入っている日かどうか。
+    func isBreak(_ day: Date, calendar: Calendar = .current) -> Bool {
+        breaks.contains { $0.contains(day, calendar: calendar) }
     }
 
     func period(at index: Int) -> PeriodSlot? {
